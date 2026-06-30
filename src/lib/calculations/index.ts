@@ -13,3 +13,5 @@ export * from "./refinance";
 export * from "./salary-growth";
 export * from "./emi-vs-cash";
 export * from "./rent-vs-buy";
+export * from "./health-score";
+export * from "./suggestions";

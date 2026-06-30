@@ -8,6 +8,7 @@ import {
   Scale,
   TrendingUp,
   Users,
+  GraduationCap,
 } from "lucide-react";
 
 export interface ToolConfig {
@@ -71,5 +72,11 @@ export const TOOLS: ToolConfig[] = [
     label: "Compare Loan Offers",
     description: "Put up to 5 bank offers side by side",
     icon: Scale,
+  },
+  {
+    href: "/learn",
+    label: "Home Loan Education",
+    description: "EMI, prepayment, tax benefits and best practices explained",
+    icon: GraduationCap,
   },
 ];

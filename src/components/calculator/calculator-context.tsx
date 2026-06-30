@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useContext, useMemo, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useMemo, type ReactNode } from "react";
 import { useForm, type UseFormReturn } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import {
@@ -17,6 +17,7 @@ import {
   loanInputSchema,
   type LoanInputValues,
 } from "@/lib/calculations/schema";
+import { decodeShareState } from "@/lib/share";
 
 interface CalculatorContextValue {
   form: UseFormReturn<LoanInputValues>;
@@ -58,7 +59,14 @@ function buildRateSchedule(values: LoanInputValues): RateChangeEntry[] | undefin
   }));
 }
 
-function toScheduleParams(
+export function derivePrincipal(values: LoanInputValues): number {
+  if (values.inputMode === "propertyValue") {
+    return deriveLoanAmount(values.propertyValue, values.downPayment);
+  }
+  return values.loanAmount;
+}
+
+export function toScheduleParams(
   values: LoanInputValues,
   principal: number,
   includePrepayment: boolean
@@ -83,14 +91,22 @@ export function CalculatorProvider({ children }: { children: ReactNode }) {
     mode: "onChange",
   });
 
+  // Hydrate from a shared link's ?s= param on first mount, if present.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const encoded = params.get("s");
+    if (!encoded) return;
+    const decoded = decodeShareState(encoded);
+    if (decoded) form.reset({ ...defaultLoanInputValues, ...decoded, startDate: new Date() });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- run once on mount only
+  }, []);
+
   const values = form.watch();
 
-  const principal = useMemo(() => {
-    if (values.inputMode === "propertyValue") {
-      return deriveLoanAmount(values.propertyValue, values.downPayment);
-    }
-    return values.loanAmount;
-  }, [values.inputMode, values.propertyValue, values.downPayment, values.loanAmount]);
+  const principal =
+    values.inputMode === "propertyValue"
+      ? deriveLoanAmount(values.propertyValue, values.downPayment)
+      : values.loanAmount;
 
   const processingFee = useMemo(
     () =>

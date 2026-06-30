@@ -60,3 +60,14 @@ export function toYearlySeries(rows: AmortizationRow[]): YearlyChartPoint[] {
       closingBalance: Math.round(point.closingBalance),
     }));
 }
+
+/**
+ * The first month where the principal component of the payment overtakes
+ * the interest component — the start of the loan's "principal-heavy" phase.
+ * Returns null if principal never overtakes interest (e.g. an
+ * interest-only loan that closes before amortizing).
+ */
+export function findCrossoverMonth(rows: AmortizationRow[]): number | null {
+  const row = rows.find((r) => r.principal >= r.interest);
+  return row ? row.period : null;
+}
