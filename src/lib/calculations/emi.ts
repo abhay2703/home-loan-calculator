@@ -15,6 +15,22 @@ export function calculateEMI(
 }
 
 /**
+ * Inverse of calculateEMI: the principal a given EMI budget can support.
+ * P = EMI * ((1+r)^n - 1) / (r * (1+r)^n)
+ */
+export function maxLoanAmountForEmi(
+  emi: number,
+  annualRatePercent: number,
+  tenureMonths: number
+): number {
+  if (emi <= 0 || tenureMonths <= 0) return 0;
+  const r = annualRatePercent / 1200;
+  if (r === 0) return emi * tenureMonths;
+  const factor = Math.pow(1 + r, tenureMonths);
+  return (emi * (factor - 1)) / (r * factor);
+}
+
+/**
  * Simulates a loan where the EMI changes by a fixed factor every 12 months,
  * returning the outstanding balance at the end of tenureMonths for a given
  * starting EMI. Used by solveStepEmi as the objective function for its

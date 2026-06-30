@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { SiteHeader } from "@/components/site-header";
 import { CalculatorProvider } from "@/components/calculator/calculator-context";
 import { LoanInputForm } from "@/components/calculator/loan-input-form";
@@ -9,6 +10,8 @@ import { AmortizationTable } from "@/components/calculator/amortization-table";
 import { AdvancedInsights } from "@/components/calculator/advanced-insights";
 import { EmiIncreaseCalculator } from "@/components/calculator/emi-increase-calculator";
 import { GoalBasedCalculator } from "@/components/calculator/goal-based-calculator";
+import { Card, CardContent } from "@/components/ui/card";
+import { TOOLS } from "@/lib/tools";
 
 export default function Home() {
   return (
@@ -45,6 +48,23 @@ export default function Home() {
             <GoalBasedCalculator />
           </div>
         </CalculatorProvider>
+
+        <section className="flex flex-col gap-3">
+          <h2 className="text-lg font-semibold tracking-tight">More tools</h2>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            {TOOLS.filter((tool) => tool.href !== "/").map((tool) => (
+              <Link key={tool.href} href={tool.href}>
+                <Card className="h-full border-border/60 shadow-sm transition-colors hover:border-primary/40 hover:bg-muted/40">
+                  <CardContent className="flex flex-col gap-2 py-1">
+                    <tool.icon className="size-5 text-primary" />
+                    <span className="text-sm font-medium">{tool.label}</span>
+                    <span className="text-xs text-muted-foreground">{tool.description}</span>
+                  </CardContent>
+                </Card>
+              </Link>
+            ))}
+          </div>
+        </section>
       </main>
       <footer className="border-t border-border/60 py-6 text-center text-xs text-muted-foreground">
         Built for Indian home loan borrowers. All calculations run locally in your browser — no data leaves your device.
