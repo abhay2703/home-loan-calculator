@@ -4,7 +4,11 @@ import { LoanInputForm } from "@/components/calculator/loan-input-form";
 import { ResultsCards } from "@/components/calculator/results-cards";
 import { ChartsSection } from "@/components/calculator/charts/charts-section";
 import { PrepaymentSimulator } from "@/components/calculator/prepayment-simulator";
+import { FloatingRateSimulator } from "@/components/calculator/floating-rate-simulator";
 import { AmortizationTable } from "@/components/calculator/amortization-table";
+import { AdvancedInsights } from "@/components/calculator/advanced-insights";
+import { EmiIncreaseCalculator } from "@/components/calculator/emi-increase-calculator";
+import { GoalBasedCalculator } from "@/components/calculator/goal-based-calculator";
 
 export default function Home() {
   return (
@@ -25,13 +29,20 @@ export default function Home() {
           <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
             <div className="flex flex-col gap-6 lg:col-span-1">
               <LoanInputForm />
+              <FloatingRateSimulator />
               <PrepaymentSimulator />
             </div>
             <div className="flex flex-col gap-6 lg:col-span-2">
               <ResultsCards />
               <ChartsSection />
+              <AdvancedInsights />
               <AmortizationTable />
             </div>
+          </div>
+
+          <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+            <EmiIncreaseCalculator />
+            <GoalBasedCalculator />
           </div>
         </CalculatorProvider>
       </main>

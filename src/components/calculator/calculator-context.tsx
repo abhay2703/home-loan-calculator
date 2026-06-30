@@ -10,6 +10,7 @@ import {
   type AmortizationResult,
   type LoanScheduleParams,
   type PrepaymentConfig,
+  type RateChangeEntry,
 } from "@/lib/calculations";
 import {
   defaultLoanInputValues,
@@ -49,6 +50,14 @@ function buildPrepaymentConfig(values: LoanInputValues): PrepaymentConfig | unde
   };
 }
 
+function buildRateSchedule(values: LoanInputValues): RateChangeEntry[] | undefined {
+  if (!values.floatingRateEnabled || values.rateChanges.length === 0) return undefined;
+  return values.rateChanges.map((rc) => ({
+    fromMonth: Math.round((rc.year - 1) * 12 + 1),
+    annualRatePercent: rc.rate,
+  }));
+}
+
 function toScheduleParams(
   values: LoanInputValues,
   principal: number,
@@ -63,6 +72,7 @@ function toScheduleParams(
     stepPercent: values.stepPercent,
     interestOnlyMonths: values.interestOnlyMonths,
     prepayment: includePrepayment ? buildPrepaymentConfig(values) : undefined,
+    rateSchedule: buildRateSchedule(values),
   };
 }
 

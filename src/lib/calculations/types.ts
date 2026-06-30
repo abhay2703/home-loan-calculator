@@ -24,6 +24,14 @@ export interface PrepaymentConfig {
   strategy: PrepaymentStrategy;
 }
 
+export interface RateChangeEntry {
+  /** 1-indexed month this rate becomes effective. Must be > 1 — the loan's
+   * base annualRatePercent always covers month 1 onward until the first
+   * scheduled change. */
+  fromMonth: number;
+  annualRatePercent: number;
+}
+
 export interface LoanScheduleParams {
   principal: number;
   annualRatePercent: number;
@@ -35,6 +43,21 @@ export interface LoanScheduleParams {
   /** Required for interestOnly: number of months at the start of tenureMonths that are interest-only. */
   interestOnlyMonths?: number;
   prepayment?: PrepaymentConfig;
+  /** Optional floating-rate schedule. Each change recomputes a flat EMI off
+   * the remaining balance and remaining original tenure, the same mechanism
+   * prepayment's "reduceEmi" strategy uses. */
+  rateSchedule?: RateChangeEntry[];
+}
+
+export interface EmiIncreaseParams {
+  principal: number;
+  annualRatePercent: number;
+  tenureMonths: number;
+  startDate: Date;
+  /** The EMI to grow from — typically the loan's current flat EMI. */
+  baselineEmi: number;
+  /** % the EMI grows by every 12 months, paid voluntarily on top of the baseline. */
+  annualIncreasePercent: number;
 }
 
 export interface AmortizationRow {

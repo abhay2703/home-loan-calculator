@@ -14,6 +14,13 @@ export const lumpSumSchema = z.object({
   label: z.string().max(40).optional(),
 });
 
+export const rateChangeSchema = z.object({
+  id: z.string(),
+  // Year 1 is always the base interestRatePercent — changes start from year 2.
+  year: z.number().min(2).max(50),
+  rate: z.number().min(0.1).max(25),
+});
+
 export const loanInputSchema = z
   .object({
     inputMode: inputModeSchema,
@@ -35,6 +42,8 @@ export const loanInputSchema = z
     recurringAmount: z.number().min(0).max(100_000_000),
     recurringFrequency: prepaymentFrequencySchema,
     lumpSums: z.array(lumpSumSchema),
+    floatingRateEnabled: z.boolean(),
+    rateChanges: z.array(rateChangeSchema),
   })
   .refine(
     (data) =>
@@ -74,4 +83,6 @@ export const defaultLoanInputValues: LoanInputValues = {
   recurringAmount: 50000,
   recurringFrequency: "yearly",
   lumpSums: [],
+  floatingRateEnabled: false,
+  rateChanges: [],
 };

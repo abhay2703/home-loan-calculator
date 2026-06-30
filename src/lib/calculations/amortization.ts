@@ -3,9 +3,11 @@ import { calculateEMI, solveStepEmi } from "./emi";
 import type {
   AmortizationResult,
   AmortizationRow,
+  EmiIncreaseParams,
   LoanScheduleParams,
   LoanSummary,
   PrepaymentConfig,
+  RateChangeEntry,
 } from "./types";
 
 const FREQUENCY_INTERVAL_MONTHS: Record<string, number> = {
@@ -87,6 +89,20 @@ function getPrepaymentForMonth(
   return extra;
 }
 
+function resolveAnnualRateForMonth(
+  month: number,
+  baseRate: number,
+  sortedRateSchedule?: RateChangeEntry[]
+): number {
+  if (!sortedRateSchedule || sortedRateSchedule.length === 0) return baseRate;
+  let rate = baseRate;
+  for (const entry of sortedRateSchedule) {
+    if (entry.fromMonth <= month) rate = entry.annualRatePercent;
+    else break;
+  }
+  return rate;
+}
+
 function deriveSummary(
   rows: AmortizationRow[],
   principal: number,
@@ -114,40 +130,39 @@ function deriveSummary(
   };
 }
 
-/**
- * Builds the full month-by-month amortization schedule for a loan, handling
- * normal/step-up/step-down/interest-only EMI structures and optional
- * recurring + lump-sum prepayments. Prepayments under the "reduceEmi"
- * strategy recompute a new flat EMI off the remaining balance and remaining
- * original tenure each time they're applied; "reduceTenure" keeps the
- * scheduled EMI and simply lets the loan close early.
- */
-export function buildAmortizationSchedule(
-  params: LoanScheduleParams
-): AmortizationResult {
-  const { principal, annualRatePercent, tenureMonths, startDate, prepayment } = params;
-  const monthlyRate = annualRatePercent / 1200;
-  const { initialEmi, emiForMonth } = buildScheduledEmi(params, monthlyRate);
+interface SimulateScheduleParams {
+  principal: number;
+  startDate: Date;
+  /** Used only to size the safety cap on simulated months. */
+  tenureMonths: number;
+  resolveMonth: (month: number, openingBalance: number) => { monthlyRate: number; emi: number };
+  extraForMonth?: (month: number) => number;
+  onAfterMonth?: (month: number, row: AmortizationRow) => void;
+}
 
+/**
+ * Generic month-by-month capped-payment simulator shared by every schedule
+ * builder in this module. A month's principal + extra payment is capped to
+ * the opening balance so the loan always closes out exactly at zero, with
+ * the final installment shrunk to whatever remains. Per-month rate and EMI
+ * are fully delegated to resolveMonth, which is how floating rates,
+ * prepayment-driven EMI recomputation, and the EMI-increase calculator all
+ * plug into the same loop without duplicating it.
+ */
+function simulateSchedule(params: SimulateScheduleParams): AmortizationRow[] {
+  const { principal, startDate, tenureMonths, resolveMonth, extraForMonth, onAfterMonth } = params;
   const rows: AmortizationRow[] = [];
   let balance = principal;
-  let dynamicEmi: number | null = null;
-  // Tracks the steady-state scheduled EMI (pre-capping) so the summary can
-  // report the real ongoing EMI rather than a shrunken final top-up payment
-  // (the last installment of a payoff is often capped to just the remaining
-  // balance, which is not representative of the EMI the borrower actually paid).
-  let lastScheduledEmi = initialEmi;
   // Generous safety cap: prepayments + step-downs could in pathological
   // inputs delay payoff well past the nominal tenure.
   const safetyCapMonths = tenureMonths + 360;
 
   for (let month = 1; month <= safetyCapMonths && balance > 0.5; month++) {
     const openingBalance = balance;
-    const scheduledEmi = dynamicEmi ?? emiForMonth(month);
-    lastScheduledEmi = scheduledEmi;
+    const { monthlyRate, emi: scheduledEmi } = resolveMonth(month, openingBalance);
     const interest = openingBalance * monthlyRate;
     let principalComponent = Math.max(scheduledEmi - interest, 0);
-    let extra = getPrepaymentForMonth(month, prepayment);
+    let extra = extraForMonth ? extraForMonth(month) : 0;
     let emiPaid = scheduledEmi;
     let closingBalance: number;
 
@@ -162,7 +177,7 @@ export function buildAmortizationSchedule(
 
     balance = closingBalance;
 
-    rows.push({
+    const row: AmortizationRow = {
       period: month,
       date: addMonths(startDate, month - 1),
       openingBalance,
@@ -171,18 +186,96 @@ export function buildAmortizationSchedule(
       interest,
       extraPayment: extra,
       closingBalance,
-    });
+    };
+    rows.push(row);
+
+    onAfterMonth?.(month, row);
 
     if (balance <= 0) break;
-
-    if (extra > 0 && prepayment?.strategy === "reduceEmi") {
-      const remainingScheduledMonths = tenureMonths - month;
-      if (remainingScheduledMonths > 0) {
-        dynamicEmi = calculateEMI(balance, annualRatePercent, remainingScheduledMonths);
-      }
-    }
   }
 
+  return rows;
+}
+
+/**
+ * Builds the full month-by-month amortization schedule for a loan, handling
+ * normal/step-up/step-down/interest-only EMI structures, an optional
+ * floating-rate schedule, and optional recurring + lump-sum prepayments.
+ * Prepayments under the "reduceEmi" strategy — and every floating-rate
+ * change — recompute a new flat EMI off the remaining balance and remaining
+ * original tenure; "reduceTenure" keeps the scheduled EMI and simply lets
+ * the loan close early.
+ */
+export function buildAmortizationSchedule(
+  params: LoanScheduleParams
+): AmortizationResult {
+  const { principal, annualRatePercent, tenureMonths, startDate, prepayment, rateSchedule } = params;
+  const sortedRateSchedule = rateSchedule
+    ? [...rateSchedule].sort((a, b) => a.fromMonth - b.fromMonth)
+    : undefined;
+  const initialMonthlyRate = annualRatePercent / 1200;
+  const { initialEmi, emiForMonth } = buildScheduledEmi(params, initialMonthlyRate);
+
+  let dynamicEmi: number | null = null;
+  let currentAnnualRate = annualRatePercent;
+  let lastScheduledEmi = initialEmi;
+
+  function resolveMonth(month: number, openingBalance: number) {
+    const monthAnnualRate = resolveAnnualRateForMonth(month, annualRatePercent, sortedRateSchedule);
+    if (monthAnnualRate !== currentAnnualRate) {
+      const remainingMonths = tenureMonths - month + 1;
+      if (remainingMonths > 0) {
+        dynamicEmi = calculateEMI(openingBalance, monthAnnualRate, remainingMonths);
+      }
+      currentAnnualRate = monthAnnualRate;
+    }
+    const emi = dynamicEmi ?? emiForMonth(month);
+    lastScheduledEmi = emi;
+    return { monthlyRate: monthAnnualRate / 1200, emi };
+  }
+
+  const rows = simulateSchedule({
+    principal,
+    startDate,
+    tenureMonths,
+    resolveMonth,
+    extraForMonth: (month) => getPrepaymentForMonth(month, prepayment),
+    onAfterMonth: (month, row) => {
+      if (row.extraPayment > 0 && prepayment?.strategy === "reduceEmi") {
+        const remainingMonths = tenureMonths - month;
+        if (remainingMonths > 0) {
+          dynamicEmi = calculateEMI(row.closingBalance, currentAnnualRate, remainingMonths);
+        }
+      }
+    },
+  });
+
   const summary = deriveSummary(rows, principal, initialEmi, lastScheduledEmi, tenureMonths);
+  return { rows, summary };
+}
+
+/**
+ * Simulates voluntarily growing a flat EMI by a fixed percentage every 12
+ * months, starting from a baseline (typically the loan's current EMI).
+ * Unlike the stepUp EMI type — which solves for a *lower* starting EMI that
+ * exactly zeroes out at the original tenure — this keeps the baseline EMI
+ * and lets the growing payments close the loan out early.
+ */
+export function buildEmiIncreaseSchedule(params: EmiIncreaseParams): AmortizationResult {
+  const { principal, annualRatePercent, tenureMonths, startDate, baselineEmi, annualIncreasePercent } = params;
+  const monthlyRate = annualRatePercent / 1200;
+  const growthFactor = 1 + annualIncreasePercent / 100;
+  const emiForMonth = (month: number) =>
+    baselineEmi * Math.pow(growthFactor, Math.floor((month - 1) / 12));
+
+  const rows = simulateSchedule({
+    principal,
+    startDate,
+    tenureMonths,
+    resolveMonth: (month) => ({ monthlyRate, emi: emiForMonth(month) }),
+  });
+
+  const finalEmi = rows.length > 0 ? emiForMonth(rows.length) : baselineEmi;
+  const summary = deriveSummary(rows, principal, baselineEmi, finalEmi, tenureMonths);
   return { rows, summary };
 }
